@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reliable Data Transmission Simulator - Sliding Window and Go-Back-N</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="top">
+  <h1>Reliable Data Transmission and Packet Recovery Simulator</h1>
+  <p>Sliding Window, Go-Back-N ARQ and CRC error detection. Everything runs locally in your browser; no real network traffic is sent.</p>
+</header>
+
+<main>
+  <!-- ===== CONTROLS ===== -->
+  <section class="panel" id="controls">
+    <h2>Simulation controls</h2>
+    <div class="form-grid">
+      <label>Number of packets<input id="numPackets" type="number" min="1" max="50" value="10"></label>
+      <label>Window size<input id="windowSize" type="number" min="1" max="16" value="4"></label>
+      <label>Packet loss probability (%)<input id="lossProb" type="number" min="0" max="90" value="20"></label>
+      <label>Packet corruption probability (%)<input id="corruptProb" type="number" min="0" max="90" value="10"></label>
+      <label>Transmission delay (ms, one way)<input id="delayMs" type="number" min="10" max="2000" value="500"></label>
+      <label>CRC algorithm
+        <select id="crcAlgo"><option>CRC-12</option><option selected>CRC-16</option><option>CRC-CCITT</option></select>
+      </label>
+      <label>Simulation mode
+        <select id="simMode"><option value="normal">Normal mode (random)</option><option value="demo">Demo mode (fixed scenario)</option></select>
+      </label>
+      <label>Animation speed
+        <select id="speed"><option value="1000">Slow</option><option value="500" selected>Normal</option><option value="150">Fast</option></select>
+      </label>
+    </div>
+    <div class="buttons">
+      <button id="btnStart" class="primary">Start Simulation</button>
+      <button id="btnPause">Pause</button>
+      <button id="btnResume">Resume</button>
+      <button id="btnNext" class="accent">Next Step</button>
+      <button id="btnReset" class="danger">Reset</button>
+      <label class="check"><input type="checkbox" id="showExplain" checked> Show "How it works"</label>
+    </div>
+    <div class="chips">
+      <span class="chip" id="chipStep">Step 0</span>
+      <span class="chip" id="chipTime">Simulated time 0 ms</span>
+      <span class="chip" id="chipSeed">Seed -</span>
+      <span class="chip" id="chipState">Not started</span>
+    </div>
+    <p class="muted" id="crcInfo"></p>
+    <div class="legend" id="legend"></div>
+  </section>
+
+  <!-- ===== SENDER ===== -->
+  <section class="panel">
+    <h2>Sender</h2>
+    <div class="facts" id="senderFacts"></div>
+    <div class="strip" id="senderStrip"><p class="muted">Press Start or Next Step to generate the packets.</p></div>
+  </section>
+
+  <div class="two-col">
+    <!-- ===== NETWORK ===== -->
+    <section class="panel">
+      <h2>Network (unreliable)</h2>
+      <div id="networkLanes"><p class="muted">No packets sent yet.</p></div>
+    </section>
+    <!-- ===== RECEIVER ===== -->
+    <section class="panel">
+      <h2>Receiver</h2>
+      <div class="facts" id="receiverFacts"></div>
+      <div id="crcCheck" class="crc-check"></div>
+      <div class="chip-row" id="receiverEvents"></div>
+    </section>
+  </div>
+
+  <!-- ===== RECOVERY ===== -->
+  <section class="panel" id="recoveryPanel">
+    <h2>Recovery</h2>
+    <div id="recoveryBox" class="recovery idle">No recovery needed so far.</div>
+  </section>
+
+  <div class="two-col">
+    <section class="panel" id="explainPanel">
+      <h2>How it works</h2>
+      <p id="explainText" class="explain"></p>
+    </section>
+    <section class="panel">
+      <h2>Simulation log</h2>
+      <div class="log" id="log"></div>
+    </section>
+  </div>
+
+  <!-- ===== STATISTICS ===== -->
+  <section class="panel">
+    <h2>Performance statistics <span id="statsTag" class="muted"></span></h2>
+    <div class="stats" id="stats"></div>
+    <p class="muted formulas">
+      Packet loss % = lost / total packets x 100. Success rate = delivered / total packets x 100.
+      Average delay = total delay / delivered packets. Throughput = delivered data (bits) / total time.
+      Each packet stands for 1000 bytes.
+    </p>
+  </section>
+
+  <!-- ===== CHARTS + COMPARISON ===== -->
+  <section class="panel">
+    <h2>Charts and window-size comparison</h2>
+    <div class="buttons">
+      <button id="btnAnalysis" class="accent">Run comparison and analysis</button>
+      <span class="muted" id="analysisNote">Runs 20 seeded simulations per setting using the loss, corruption, delay and CRC values above.</span>
+    </div>
+    <div id="chartWarning" class="warn-box" hidden>Chart.js could not be loaded (no internet). Connect to the internet or see the README for the offline option.</div>
+    <div class="charts">
+      <div class="chart-card"><h3>1. Packet status distribution</h3><div class="canvas-box"><canvas id="chartStatus"></canvas></div></div>
+      <div class="chart-card"><h3>2. Packet loss vs retransmissions (per packet)</h3><div class="canvas-box"><canvas id="chartPerPacket"></canvas></div></div>
+      <div class="chart-card"><h3>3. Packet loss probability vs throughput</h3><div class="canvas-box"><canvas id="chartLossThroughput"></canvas></div></div>
+      <div class="chart-card"><h3>4. Packet loss probability vs retransmissions</h3><div class="canvas-box"><canvas id="chartLossRetx"></canvas></div></div>
+      <div class="chart-card"><h3>5. Window size vs throughput</h3><div class="canvas-box"><canvas id="chartWindowThroughput"></canvas></div></div>
+    </div>
+    <h3>Window size comparison (average of 20 runs)</h3>
+    <div class="table-wrap"><table id="compareTable">
+      <thead><tr><th>Window</th><th>Total transmissions</th><th>Retransmissions</th><th>Throughput (Kbps)</th><th>Avg delay (ms)</th><th>Completion time (ms)</th></tr></thead>
+      <tbody><tr><td colspan="6" class="muted">Click "Run comparison and analysis".</td></tr></tbody>
+    </table></div>
+  </section>
+</main>
+
+<footer class="foot">Computer Networks mini project: Reliable data transmission using Sliding Window and Go-Back-N.</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="js/crc.js"></script>
+<script src="js/packet.js"></script>
+<script src="js/slidingWindow.js"></script>
+<script src="js/goBackN.js"></script>
+<script src="js/network.js"></script>
+<script src="js/statistics.js"></script>
+<script src="js/simulation.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
